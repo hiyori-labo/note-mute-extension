@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 340px;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+      color: #333;
+      background: #fafafa;
+    }
+    .header {
+      background: #64748b;
+      color: #fff;
+      padding: 14px 16px;
+    }
+    .header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .header p {
+      font-size: 11px;
+      opacity: 0.85;
+      margin-top: 3px;
+    }
+    .add-section {
+      padding: 12px 16px;
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid #e8e8e8;
+      background: #fff;
+    }
+    .add-section input {
+      flex: 1;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .add-section input:focus {
+      border-color: #64748b;
+    }
+    .add-section input::placeholder {
+      color: #aaa;
+    }
+    .add-section button {
+      padding: 8px 14px;
+      background: #64748b;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .add-section button:hover {
+      background: #556578;
+    }
+    .list-section {
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .empty-message {
+      padding: 32px 16px;
+      text-align: center;
+      color: #999;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .muted-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      background: #fff;
+      transition: background 0.15s;
+    }
+    .muted-item:hover {
+      background: #f8f8f8;
+    }
+    .muted-item .creator-info {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+    .muted-item .creator-id {
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .muted-item .creator-id::before {
+      content: "@";
+      color: #999;
+    }
+    .muted-item .creator-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #222;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .muted-item .creator-memo {
+      font-size: 11px;
+      color: #999;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .add-section button:disabled {
+      background: #95a0ad;
+      cursor: default;
+    }
+    .muted-item .remove-btn {
+      background: none;
+      border: none;
+      color: #ccc;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: color 0.2s, background 0.2s;
+      flex-shrink: 0;
+    }
+    .muted-item .remove-btn:hover {
+      color: #e55;
+      background: #fee;
+    }
+    .footer {
+      padding: 10px 16px;
+      font-size: 11px;
+      color: #bbb;
+      text-align: center;
+      border-top: 1px solid #e8e8e8;
+    }
+    .toast {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%) translateY(40px);
+      background: #333;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔇 note ミュート</h1>
+    <p>指定したクリエイターの記事をホームから非表示にします</p>
+  </div>
+
+  <div class="add-section">
+    <input type="text" id="creatorInput" placeholder="クリエイターID（例: hiyori_labo）">
+    <button id="addBtn">追加</button>
+  </div>
+
+  <div class="list-section" id="listSection">
+    <div class="empty-message" id="emptyMsg">
+      ミュート中のクリエイターはいません。<br>
+      IDを入力して追加してください。
+    </div>
+  </div>
+
+  <div class="footer">
+    クリエイターIDはプロフィールURLの note.com/<strong>ここの部分</strong> です
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
