@@ -40,6 +40,11 @@
           'article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
         )
       ) {
+        // リンク自身がNoteWrapperクラスを含む場合はスキップ（もっと上の要素を探す）
+        if (el === link) {
+          el = el.parentElement;
+          continue;
+        }
         return el;
       }
       const parent = el.parentElement;
@@ -54,17 +59,72 @@
     return null;
   }
 
+  // 要素を非表示にする
+  function hideElement(el) {
+    if (!el.dataset.noteMuted) {
+      el.style.display = "none";
+      el.dataset.noteMuted = "true";
+    }
+  }
+
+  // 横スクロールセクションの処理
+  // カードパーツがフラットに並んでいるため、リンクから次のカードリンクまでの兄弟を全て非表示
+  function scanHorizontalSections() {
+    const containers = document.querySelectorAll(
+      '[class*="horizontalScrolling"], [class*="HorizontalScroll"]'
+    );
+    for (const container of containers) {
+      const allLinks = container.querySelectorAll('a[href^="/"]');
+      for (const link of allLinks) {
+        const creatorId = extractCreatorId(link.getAttribute("href"));
+        if (!creatorId || !mutedIds.includes(creatorId)) continue;
+
+        // このリンク自体を非表示
+        hideElement(link);
+
+        // 次の兄弟要素を非表示にする（次のカードのメインリンクが出るまで）
+        let sibling = link.nextElementSibling;
+        while (sibling) {
+          // 次のカードのメインリンク（別のクリエイターの記事リンク）なら停止
+          if (sibling.tagName === "A" && sibling.getAttribute("href")) {
+            const siblingHref = sibling.getAttribute("href");
+            const siblingCreator = extractCreatorId(siblingHref);
+            // 別のクリエイターの記事リンクなら停止（同じクリエイターなら続けて非表示）
+            if (siblingCreator && siblingCreator !== creatorId) break;
+            // 同じクリエイターの関連リンク（プロフィールリンク等）は非表示
+            if (siblingCreator === creatorId) {
+              hideElement(sibling);
+              sibling = sibling.nextElementSibling;
+              continue;
+            }
+          }
+          // ボタンやスペーサー等のカード構成要素も非表示
+          hideElement(sibling);
+          sibling = sibling.nextElementSibling;
+        }
+      }
+    }
+  }
+
   // ページ全体のリンクをスキャンしてミュート対象を非表示
   function scanAll() {
     if (!mutedIds.length) return;
+
+    // 横スクロールセクションの処理
+    scanHorizontalSections();
+
+    // 通常セクションの処理
     const allLinks = document.querySelectorAll('a[href^="/"]');
     for (const link of allLinks) {
+      // 既に処理済みなら飛ばす
+      if (link.dataset.noteMuted) continue;
+      // 横スクロールセクション内は上で処理済み
+      if (link.closest('[class*="horizontalScrolling"], [class*="HorizontalScroll"]')) continue;
       const creatorId = extractCreatorId(link.getAttribute("href"));
       if (!creatorId || !mutedIds.includes(creatorId)) continue;
       const block = findArticleBlock(link);
-      if (block && !block.dataset.noteMuted) {
-        block.style.display = "none";
-        block.dataset.noteMuted = "true";
+      if (block) {
+        hideElement(block);
       }
     }
   }

@@ -67,19 +67,20 @@
   function findArticleBlock(link) {
     let el = link.parentElement;
     while (el && el !== document.body) {
-      // 既知のカードセレクター
       if (
         el.matches &&
         el.matches(
           'article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
         )
       ) {
+        if (el === link) {
+          el = el.parentElement;
+          continue;
+        }
         return el;
       }
-      // 兄弟要素もあるコンテナ（リストアイテム的な要素）
       const parent = el.parentElement;
       if (parent && parent.children.length > 1 && el.querySelector("a[href]")) {
-        // もう1段上がるべきか判定: 上の要素にも複数のリンクがあれば、ここが記事ブロック
         const parentLinks = parent.querySelectorAll(':scope > * > a[href^="/"]');
         if (parentLinks.length > 1) {
           return el;
@@ -90,19 +91,61 @@
     return null;
   }
 
+  // 要素を非表示にする
+  function hideElement(el) {
+    if (!el.dataset.noteMuted) {
+      el.style.display = "none";
+      el.dataset.noteMuted = "true";
+    }
+  }
+
+  // 横スクロールセクションの処理
+  function scanHorizontalSections() {
+    const containers = document.querySelectorAll(
+      '[class*="horizontalScrolling"], [class*="HorizontalScroll"]'
+    );
+    for (const container of containers) {
+      const allLinks = container.querySelectorAll('a[href^="/"]');
+      for (const link of allLinks) {
+        const creatorId = extractCreatorId(link.getAttribute("href"));
+        if (!creatorId || !mutedIds.includes(creatorId)) continue;
+
+        hideElement(link);
+
+        let sibling = link.nextElementSibling;
+        while (sibling) {
+          if (sibling.tagName === "A" && sibling.getAttribute("href")) {
+            const siblingHref = sibling.getAttribute("href");
+            const siblingCreator = extractCreatorId(siblingHref);
+            if (siblingCreator && siblingCreator !== creatorId) break;
+            if (siblingCreator === creatorId) {
+              hideElement(sibling);
+              sibling = sibling.nextElementSibling;
+              continue;
+            }
+          }
+          hideElement(sibling);
+          sibling = sibling.nextElementSibling;
+        }
+      }
+    }
+  }
+
   // ページ全体のリンクをスキャンしてミュート対象を非表示
   function scanAll() {
     if (!mutedIds.length) return;
+
+    scanHorizontalSections();
+
     const allLinks = document.querySelectorAll('a[href^="/"]');
     for (const link of allLinks) {
-      // UI要素内のリンクは無視
-      if (link.closest("#nm-panel, #nm-fab")) continue;
+      if (link.dataset.noteMuted) continue;
+      if (link.closest('#nm-panel, #nm-fab, [class*="horizontalScrolling"], [class*="HorizontalScroll"]')) continue;
       const creatorId = extractCreatorId(link.getAttribute("href"));
       if (!creatorId || !mutedIds.includes(creatorId)) continue;
       const block = findArticleBlock(link);
-      if (block && !block.dataset.noteMuted) {
-        block.style.display = "none";
-        block.dataset.noteMuted = "true";
+      if (block) {
+        hideElement(block);
       }
     }
   }
