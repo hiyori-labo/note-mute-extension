@@ -13,38 +13,60 @@
     });
   }
 
-  // 単一の記事カードを判定して非表示にする
-  function hideIfMuted(el) {
-    if (!mutedIds.length) return;
-    const links = el.querySelectorAll("a[href]");
-    for (const link of links) {
-      const href = link.getAttribute("href") || "";
-      // note.com/creatorId/... のパターンにマッチ
-      const match = href.match(/^\/([^/]+)\//);
-      if (match) {
-        const creatorId = match[1].toLowerCase();
-        if (mutedIds.includes(creatorId)) {
-          el.style.display = "none";
-          el.dataset.noteMuted = "true";
-          return;
-        }
-      }
-    }
+  // noteの予約パス（クリエイターIDではないもの）
+  const RESERVED_PATHS = new Set([
+    "search", "explore", "notifications", "settings", "login",
+    "signup", "terms", "privacy", "help", "about", "ranking",
+    "contests", "categories", "hashtag", "membership", "api",
+  ]);
+
+  // リンクのhrefからクリエイターIDを抽出
+  function extractCreatorId(href) {
+    if (!href) return null;
+    const match = href.match(/^\/([^/]+)(?:\/|$)/);
+    if (!match) return null;
+    const id = match[1].toLowerCase();
+    if (RESERVED_PATHS.has(id)) return null;
+    return id;
   }
 
-  // ページ上の全記事カードをスキャン
-  function scanAll() {
-    // メインの記事カード
-    const cards = document.querySelectorAll(
-      'section.m-largeNoteWrapper, [class*="NoteWrapper"], article'
-    );
-    cards.forEach(hideIfMuted);
+  // リンクから最も近い記事ブロック（非表示対象）を探す
+  function findArticleBlock(link) {
+    let el = link.parentElement;
+    while (el && el !== document.body) {
+      if (
+        el.matches &&
+        el.matches(
+          'section, article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
+        )
+      ) {
+        return el;
+      }
+      const parent = el.parentElement;
+      if (parent && parent.children.length > 1 && el.querySelector("a[href]")) {
+        const parentLinks = parent.querySelectorAll(':scope > * > a[href^="/"]');
+        if (parentLinks.length > 1) {
+          return el;
+        }
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
 
-    // 横スクロール内のカード（おすすめ等）
-    const smallCards = document.querySelectorAll(
-      '[class*="noteCard"], [class*="NoteCard"]'
-    );
-    smallCards.forEach(hideIfMuted);
+  // ページ全体のリンクをスキャンしてミュート対象を非表示
+  function scanAll() {
+    if (!mutedIds.length) return;
+    const allLinks = document.querySelectorAll('a[href^="/"]');
+    for (const link of allLinks) {
+      const creatorId = extractCreatorId(link.getAttribute("href"));
+      if (!creatorId || !mutedIds.includes(creatorId)) continue;
+      const block = findArticleBlock(link);
+      if (block && !block.dataset.noteMuted) {
+        block.style.display = "none";
+        block.dataset.noteMuted = "true";
+      }
+    }
   }
 
   // ミュート解除（リスト更新時に再表示するため）
@@ -55,32 +77,12 @@
     });
   }
 
-  // MutationObserverで動的に追加される要素を監視
+  // 新しいノードが追加されたら再スキャン
   function startObserver() {
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-          // 追加されたノード自身がカードか
-          if (
-            node.matches &&
-            node.matches(
-              'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"]'
-            )
-          ) {
-            hideIfMuted(node);
-          }
-
-          // 追加されたノードの子孫にカードがあるか
-          const innerCards = node.querySelectorAll
-            ? node.querySelectorAll(
-                'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"]'
-              )
-            : [];
-          innerCards.forEach(hideIfMuted);
-        }
-      }
+    let scanTimer = null;
+    const observer = new MutationObserver(() => {
+      if (scanTimer) clearTimeout(scanTimer);
+      scanTimer = setTimeout(scanAll, 200);
     });
 
     observer.observe(document.body, {

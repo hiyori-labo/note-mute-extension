@@ -46,28 +46,65 @@
     mutedIds = loadCreators().map((c) => c.id.toLowerCase());
   }
 
-  function hideIfMuted(el) {
-    if (!mutedIds.length) return;
-    const links = el.querySelectorAll("a[href]");
-    for (const link of links) {
-      const href = link.getAttribute("href") || "";
-      const match = href.match(/^\/([^/]+)\//);
-      if (match) {
-        const creatorId = match[1].toLowerCase();
-        if (mutedIds.includes(creatorId)) {
-          el.style.display = "none";
-          el.dataset.noteMuted = "true";
-          return;
-        }
-      }
-    }
+  // noteの予約パス（クリエイターIDではないもの）
+  const RESERVED_PATHS = new Set([
+    "search", "explore", "notifications", "settings", "login",
+    "signup", "terms", "privacy", "help", "about", "ranking",
+    "contests", "categories", "hashtag", "membership", "api",
+  ]);
+
+  // リンクのhrefからクリエイターIDを抽出
+  function extractCreatorId(href) {
+    if (!href) return null;
+    const match = href.match(/^\/([^/]+)(?:\/|$)/);
+    if (!match) return null;
+    const id = match[1].toLowerCase();
+    if (RESERVED_PATHS.has(id)) return null;
+    return id;
   }
 
-  const CARD_SELECTOR =
-    'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"]';
+  // リンクから最も近い記事ブロック（非表示対象）を探す
+  function findArticleBlock(link) {
+    let el = link.parentElement;
+    while (el && el !== document.body) {
+      // 既知のカードセレクター
+      if (
+        el.matches &&
+        el.matches(
+          'section, article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
+        )
+      ) {
+        return el;
+      }
+      // 兄弟要素もあるコンテナ（リストアイテム的な要素）
+      const parent = el.parentElement;
+      if (parent && parent.children.length > 1 && el.querySelector("a[href]")) {
+        // もう1段上がるべきか判定: 上の要素にも複数のリンクがあれば、ここが記事ブロック
+        const parentLinks = parent.querySelectorAll(':scope > * > a[href^="/"]');
+        if (parentLinks.length > 1) {
+          return el;
+        }
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
 
+  // ページ全体のリンクをスキャンしてミュート対象を非表示
   function scanAll() {
-    document.querySelectorAll(CARD_SELECTOR).forEach(hideIfMuted);
+    if (!mutedIds.length) return;
+    const allLinks = document.querySelectorAll('a[href^="/"]');
+    for (const link of allLinks) {
+      // UI要素内のリンクは無視
+      if (link.closest("#nm-panel, #nm-fab")) continue;
+      const creatorId = extractCreatorId(link.getAttribute("href"));
+      if (!creatorId || !mutedIds.includes(creatorId)) continue;
+      const block = findArticleBlock(link);
+      if (block && !block.dataset.noteMuted) {
+        block.style.display = "none";
+        block.dataset.noteMuted = "true";
+      }
+    }
   }
 
   function unhideAll() {
@@ -77,17 +114,13 @@
     });
   }
 
+  // 新しいノードが追加されたら再スキャン
   function startObserver() {
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node.nodeType !== Node.ELEMENT_NODE) continue;
-          if (node.matches && node.matches(CARD_SELECTOR)) hideIfMuted(node);
-          if (node.querySelectorAll) {
-            node.querySelectorAll(CARD_SELECTOR).forEach(hideIfMuted);
-          }
-        }
-      }
+    let scanTimer = null;
+    const observer = new MutationObserver(() => {
+      // デバウンスで過度なスキャンを防止
+      if (scanTimer) clearTimeout(scanTimer);
+      scanTimer = setTimeout(scanAll, 200);
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
@@ -169,7 +202,7 @@
         padding: 7px 8px;
         border: 1px solid #ccc;
         border-radius: 6px;
-        font-size: 13px;
+        font-size: 16px;
         outline: none;
       }
       #nm-panel-add input:focus { border-color: #64748b; }
