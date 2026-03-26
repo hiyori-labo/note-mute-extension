@@ -37,7 +37,7 @@
       if (
         el.matches &&
         el.matches(
-          'section, article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
+          'article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
         )
       ) {
         return el;
