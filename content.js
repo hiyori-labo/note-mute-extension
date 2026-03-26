@@ -30,6 +30,24 @@
     return id;
   }
 
+  // カードセレクター（元の方式 - 横スクロール等で有効）
+  const CARD_SELECTOR =
+    'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"]';
+
+  // カード要素内のリンクからクリエイターIDを判定して非表示
+  function hideIfMuted(el) {
+    if (!mutedIds.length || el.dataset.noteMuted) return;
+    const links = el.querySelectorAll("a[href]");
+    for (const link of links) {
+      const creatorId = extractCreatorId(link.getAttribute("href"));
+      if (creatorId && mutedIds.includes(creatorId)) {
+        el.style.display = "none";
+        el.dataset.noteMuted = "true";
+        return;
+      }
+    }
+  }
+
   // リンクから最も近い記事ブロック（非表示対象）を探す
   function findArticleBlock(link) {
     let el = link.parentElement;
@@ -40,7 +58,6 @@
           'article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
         )
       ) {
-        // リンク自身がNoteWrapperクラスを含む場合はスキップ（もっと上の要素を探す）
         if (el === link) {
           el = el.parentElement;
           continue;
@@ -59,72 +76,24 @@
     return null;
   }
 
-  // 要素を非表示にする
-  function hideElement(el) {
-    if (!el.dataset.noteMuted) {
-      el.style.display = "none";
-      el.dataset.noteMuted = "true";
-    }
-  }
-
-  // 横スクロールセクションの処理
-  // カードパーツがフラットに並んでいるため、リンクから次のカードリンクまでの兄弟を全て非表示
-  function scanHorizontalSections() {
-    const containers = document.querySelectorAll(
-      '[class*="horizontalScrolling"], [class*="HorizontalScroll"]'
-    );
-    for (const container of containers) {
-      const allLinks = container.querySelectorAll('a[href^="/"]');
-      for (const link of allLinks) {
-        const creatorId = extractCreatorId(link.getAttribute("href"));
-        if (!creatorId || !mutedIds.includes(creatorId)) continue;
-
-        // このリンク自体を非表示
-        hideElement(link);
-
-        // 次の兄弟要素を非表示にする（次のカードのメインリンクが出るまで）
-        let sibling = link.nextElementSibling;
-        while (sibling) {
-          // 次のカードのメインリンク（別のクリエイターの記事リンク）なら停止
-          if (sibling.tagName === "A" && sibling.getAttribute("href")) {
-            const siblingHref = sibling.getAttribute("href");
-            const siblingCreator = extractCreatorId(siblingHref);
-            // 別のクリエイターの記事リンクなら停止（同じクリエイターなら続けて非表示）
-            if (siblingCreator && siblingCreator !== creatorId) break;
-            // 同じクリエイターの関連リンク（プロフィールリンク等）は非表示
-            if (siblingCreator === creatorId) {
-              hideElement(sibling);
-              sibling = sibling.nextElementSibling;
-              continue;
-            }
-          }
-          // ボタンやスペーサー等のカード構成要素も非表示
-          hideElement(sibling);
-          sibling = sibling.nextElementSibling;
-        }
-      }
-    }
-  }
-
-  // ページ全体のリンクをスキャンしてミュート対象を非表示
+  // ページ全体をスキャン
   function scanAll() {
     if (!mutedIds.length) return;
 
-    // 横スクロールセクションの処理
-    scanHorizontalSections();
+    // ① カードセレクター方式（横スクロール等で確実に動くやつ）
+    document.querySelectorAll(CARD_SELECTOR).forEach(hideIfMuted);
 
-    // 通常セクションの処理
+    // ② リンクスキャン方式で追加検出（①で漏れた「今日のあなたに」等をカバー）
     const allLinks = document.querySelectorAll('a[href^="/"]');
     for (const link of allLinks) {
-      // 既に処理済みなら飛ばす
-      if (link.dataset.noteMuted) continue;
-      // 横スクロールセクション内は上で処理済み
-      if (link.closest('[class*="horizontalScrolling"], [class*="HorizontalScroll"]')) continue;
+      // 既に非表示済みの要素内なら飛ばす
+      if (link.closest('[data-note-muted="true"]')) continue;
       const creatorId = extractCreatorId(link.getAttribute("href"));
       if (!creatorId || !mutedIds.includes(creatorId)) continue;
       const block = findArticleBlock(link);
-      if (block) {
-        hideElement(block);
+      if (block && !block.dataset.noteMuted) {
+        block.style.display = "none";
+        block.dataset.noteMuted = "true";
       }
     }
   }

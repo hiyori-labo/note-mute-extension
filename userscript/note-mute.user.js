@@ -63,6 +63,23 @@
     return id;
   }
 
+  // カードセレクター（元の方式 - 横スクロール等で有効）
+  const CARD_SELECTOR =
+    'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"]';
+
+  function hideIfMuted(el) {
+    if (!mutedIds.length || el.dataset.noteMuted) return;
+    const links = el.querySelectorAll("a[href]");
+    for (const link of links) {
+      const creatorId = extractCreatorId(link.getAttribute("href"));
+      if (creatorId && mutedIds.includes(creatorId)) {
+        el.style.display = "none";
+        el.dataset.noteMuted = "true";
+        return;
+      }
+    }
+  }
+
   // リンクから最も近い記事ブロック（非表示対象）を探す
   function findArticleBlock(link) {
     let el = link.parentElement;
@@ -91,61 +108,22 @@
     return null;
   }
 
-  // 要素を非表示にする
-  function hideElement(el) {
-    if (!el.dataset.noteMuted) {
-      el.style.display = "none";
-      el.dataset.noteMuted = "true";
-    }
-  }
-
-  // 横スクロールセクションの処理
-  function scanHorizontalSections() {
-    const containers = document.querySelectorAll(
-      '[class*="horizontalScrolling"], [class*="HorizontalScroll"]'
-    );
-    for (const container of containers) {
-      const allLinks = container.querySelectorAll('a[href^="/"]');
-      for (const link of allLinks) {
-        const creatorId = extractCreatorId(link.getAttribute("href"));
-        if (!creatorId || !mutedIds.includes(creatorId)) continue;
-
-        hideElement(link);
-
-        let sibling = link.nextElementSibling;
-        while (sibling) {
-          if (sibling.tagName === "A" && sibling.getAttribute("href")) {
-            const siblingHref = sibling.getAttribute("href");
-            const siblingCreator = extractCreatorId(siblingHref);
-            if (siblingCreator && siblingCreator !== creatorId) break;
-            if (siblingCreator === creatorId) {
-              hideElement(sibling);
-              sibling = sibling.nextElementSibling;
-              continue;
-            }
-          }
-          hideElement(sibling);
-          sibling = sibling.nextElementSibling;
-        }
-      }
-    }
-  }
-
-  // ページ全体のリンクをスキャンしてミュート対象を非表示
   function scanAll() {
     if (!mutedIds.length) return;
 
-    scanHorizontalSections();
+    // ① カードセレクター方式
+    document.querySelectorAll(CARD_SELECTOR).forEach(hideIfMuted);
 
+    // ② リンクスキャン方式で追加検出
     const allLinks = document.querySelectorAll('a[href^="/"]');
     for (const link of allLinks) {
-      if (link.dataset.noteMuted) continue;
-      if (link.closest('#nm-panel, #nm-fab, [class*="horizontalScrolling"], [class*="HorizontalScroll"]')) continue;
+      if (link.closest('#nm-panel, #nm-fab, [data-note-muted="true"]')) continue;
       const creatorId = extractCreatorId(link.getAttribute("href"));
       if (!creatorId || !mutedIds.includes(creatorId)) continue;
       const block = findArticleBlock(link);
-      if (block) {
-        hideElement(block);
+      if (block && !block.dataset.noteMuted) {
+        block.style.display = "none";
+        block.dataset.noteMuted = "true";
       }
     }
   }
