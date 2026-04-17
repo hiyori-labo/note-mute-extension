@@ -5,10 +5,14 @@
 // @description  noteのホームフィードから特定クリエイターの記事を非表示にします
 // @match        https://note.com/*
 // @run-at       document-idle
+// @noframes
 // ==/UserScript==
 
 (() => {
   "use strict";
+
+  // 埋め込みカード等の iframe 内では動かない（FAB の二重表示防止）
+  if (window.top !== window.self) return;
 
   const STORAGE_KEY = "noteMute_creators";
 
