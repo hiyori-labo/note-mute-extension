@@ -171,8 +171,25 @@
   }
 
   function injectUI() {
-    const style = document.createElement("style");
-    style.textContent = `
+    // 既に揃っていれば再注入スキップ（イベントリスナーは document 委譲なので1回で十分）
+    if (
+      document.getElementById("nm-fab") &&
+      document.getElementById("nm-panel") &&
+      document.getElementById("nm-toast") &&
+      document.getElementById("nm-style")
+    ) {
+      return;
+    }
+
+    // 欠けている要素だけ取り除いて作り直す（中途半端な状態対策）
+    document.getElementById("nm-fab")?.remove();
+    document.getElementById("nm-panel")?.remove();
+    document.getElementById("nm-toast")?.remove();
+
+    if (!document.getElementById("nm-style")) {
+      const style = document.createElement("style");
+      style.id = "nm-style";
+      style.textContent = `
       #nm-fab {
         position: fixed;
         bottom: 20px;
@@ -316,7 +333,8 @@
         transform: translateX(-50%) translateY(0);
       }
     `;
-    document.head.appendChild(style);
+      document.head.appendChild(style);
+    }
 
     // FAB
     const fab = document.createElement("button");
@@ -343,35 +361,18 @@
     toast.id = "nm-toast";
     document.body.appendChild(toast);
 
-    // 要素の参照
-    const inputEl = document.getElementById("nm-input");
-    const addBtnEl = document.getElementById("nm-add-btn");
-    const listEl = document.getElementById("nm-list");
-    const toastEl = document.getElementById("nm-toast");
-
-    // FABタップでパネル開閉
-    fab.addEventListener("click", () => {
-      panel.classList.toggle("open");
-    });
-
-    // パネル外タップで閉じる
-    document.addEventListener("click", (e) => {
-      if (
-        panel.classList.contains("open") &&
-        !panel.contains(e.target) &&
-        e.target !== fab
-      ) {
-        panel.classList.remove("open");
-      }
-    });
-
     function showToast(msg) {
+      const toastEl = document.getElementById("nm-toast");
+      if (!toastEl) return;
       toastEl.textContent = msg;
       toastEl.classList.add("show");
       setTimeout(() => toastEl.classList.remove("show"), 2000);
     }
 
     function renderList() {
+      // SPA遷移で listEl が差し替わる可能性があるので都度取得
+      const listEl = document.getElementById("nm-list");
+      if (!listEl) return;
       const creators = loadCreators();
       if (creators.length === 0) {
         listEl.innerHTML =
@@ -390,22 +391,13 @@
         </div>`
         )
         .join("");
-      listEl.querySelectorAll(".nm-remove").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const creators = loadCreators();
-          const idx = parseInt(btn.dataset.index, 10);
-          const removed = creators.splice(idx, 1)[0];
-          saveCreators(creators);
-          updateMutedIds();
-          unhideAll();
-          scanAll();
-          renderList();
-          showToast(`@${removed.id} のミュートを解除しました`);
-        });
-      });
     }
 
     async function addCreator() {
+      const inputEl = document.getElementById("nm-input");
+      const addBtnEl = document.getElementById("nm-add-btn");
+      if (!inputEl || !addBtnEl) return;
+
       let id = inputEl.value.trim();
       const urlMatch = id.match(/note\.com\/([^/?#]+)/);
       if (urlMatch) id = urlMatch[1];
@@ -451,9 +443,61 @@
       );
     }
 
-    addBtnEl.addEventListener("click", addCreator);
-    inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") addCreator();
+    // ── イベント委譲：document に1回だけ登録。DOMが差し替わっても生き残る ──
+    if (window.__nmListenersAttached) {
+      renderList();
+      return;
+    }
+    window.__nmListenersAttached = true;
+
+    document.addEventListener("click", (e) => {
+      const panelEl = document.getElementById("nm-panel");
+
+      // FABタップ：パネル開閉＋開く時は必ず再描画
+      if (e.target.closest("#nm-fab")) {
+        if (!panelEl) return;
+        const willOpen = !panelEl.classList.contains("open");
+        if (willOpen) renderList();
+        panelEl.classList.toggle("open");
+        return;
+      }
+
+      // 追加ボタン
+      if (e.target.closest("#nm-add-btn")) {
+        addCreator();
+        return;
+      }
+
+      // ミュート解除ボタン
+      const removeBtn = e.target.closest(".nm-remove");
+      if (removeBtn) {
+        const idx = parseInt(removeBtn.dataset.index, 10);
+        const creators = loadCreators();
+        const removed = creators.splice(idx, 1)[0];
+        if (!removed) return;
+        saveCreators(creators);
+        updateMutedIds();
+        unhideAll();
+        scanAll();
+        renderList();
+        showToast(`@${removed.id} のミュートを解除しました`);
+        return;
+      }
+
+      // パネル外タップで閉じる
+      if (
+        panelEl &&
+        panelEl.classList.contains("open") &&
+        !panelEl.contains(e.target)
+      ) {
+        panelEl.classList.remove("open");
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.target && e.target.id === "nm-input" && e.key === "Enter") {
+        addCreator();
+      }
     });
 
     renderList();
@@ -468,6 +512,8 @@
     watchNavigation();
     setTimeout(scanAll, 1000);
     setTimeout(scanAll, 3000);
+    // UIが note.com の SPA 再描画で消えた場合に備えて定期的に再注入
+    setInterval(injectUI, 2000);
   }
 
   if (document.readyState === "loading") {
