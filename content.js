@@ -18,17 +18,35 @@
     "search", "explore", "notifications", "settings", "login",
     "signup", "terms", "privacy", "help", "about", "ranking",
     "contests", "categories", "hashtag", "membership", "api",
+    "recommends", "topic", "policies", "official", "premium",
+    "magazines", "tag", "n",
   ]);
 
-  // リンクのhrefからクリエイターIDを抽出
+  // リンクのhrefからクリエイターIDを抽出（相対パス・絶対URL両対応）
   function extractCreatorId(href) {
     if (!href) return null;
-    const match = href.match(/^\/([^/]+)(?:\/|$)/);
-    if (!match) return null;
-    const id = match[1].toLowerCase();
-    if (RESERVED_PATHS.has(id)) return null;
-    return id;
+
+    // 絶対URL対応: https://note.com/username/... からusernameを抽出
+    const absoluteMatch = href.match(/^https?:\/\/note\.com\/([^/?#]+)/);
+    if (absoluteMatch) {
+      const id = absoluteMatch[1].toLowerCase();
+      if (RESERVED_PATHS.has(id)) return null;
+      return id;
+    }
+
+    // 相対パス対応: /username/... からusernameを抽出
+    const relativeMatch = href.match(/^\/([^/?#]+)(?:\/|$)/);
+    if (relativeMatch) {
+      const id = relativeMatch[1].toLowerCase();
+      if (RESERVED_PATHS.has(id)) return null;
+      return id;
+    }
+
+    return null;
   }
+
+  // note記事リンクセレクタ（相対パス + 絶対URL両方）
+  const NOTE_LINK_SELECTOR = 'a[href^="/"], a[href^="https://note.com/"]';
 
   // カードセレクター（元の方式 - 横スクロール等で有効）
   const CARD_SELECTOR =
@@ -52,6 +70,7 @@
   function findArticleBlock(link) {
     let el = link.parentElement;
     while (el && el !== document.body) {
+      // ① 既知のセレクタにマッチするカード要素
       if (
         el.matches &&
         el.matches(
@@ -64,13 +83,27 @@
         }
         return el;
       }
+
+      // ② 兄弟要素が複数あり、記事リンクを含む要素（汎用カード検出）
       const parent = el.parentElement;
       if (parent && parent.children.length > 1 && el.querySelector("a[href]")) {
-        const parentLinks = parent.querySelectorAll(':scope > * > a[href^="/"]');
+        // 相対パスまたは絶対URLのnoteリンクを持つ兄弟が複数あるかチェック
+        const parentLinks = parent.querySelectorAll(
+          ':scope > * > a[href^="/"], :scope > * > a[href^="https://note.com/"]'
+        );
         if (parentLinks.length > 1) {
           return el;
         }
+
+        // もう少し深い階層のリンクもチェック（カテゴリページ等のネスト構造対応）
+        const deepLinks = parent.querySelectorAll(
+          ':scope > * a[href*="/n/"]'
+        );
+        if (deepLinks.length > 1) {
+          return el;
+        }
       }
+
       el = el.parentElement;
     }
     return null;
@@ -83,8 +116,9 @@
     // ① カードセレクター方式（横スクロール等で確実に動くやつ）
     document.querySelectorAll(CARD_SELECTOR).forEach(hideIfMuted);
 
-    // ② リンクスキャン方式で追加検出（①で漏れた「今日のあなたに」等をカバー）
-    const allLinks = document.querySelectorAll('a[href^="/"]');
+    // ② リンクスキャン方式で追加検出
+    //    相対パスリンクと絶対URLリンクの両方をスキャン
+    const allLinks = document.querySelectorAll(NOTE_LINK_SELECTOR);
     for (const link of allLinks) {
       // 既に非表示済みの要素内なら飛ばす
       if (link.closest('[data-note-muted="true"]')) continue;
