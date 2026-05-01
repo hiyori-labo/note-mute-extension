@@ -57,13 +57,34 @@
     if (!mutedIds.length || el.dataset.noteMuted) return;
     const links = el.querySelectorAll("a[href]");
     for (const link of links) {
+      // コメント欄内のリンクは別ロジック（findCommentItem）で処理するためスキップ
+      if (link.closest(".o-commentSection")) continue;
       const creatorId = extractCreatorId(link.getAttribute("href"));
       if (creatorId && mutedIds.includes(creatorId)) {
-        el.style.display = "none";
+        el.style.setProperty("display", "none", "important");
         el.dataset.noteMuted = "true";
         return;
       }
     }
+  }
+
+  // コメント1件のwrapper要素を特定する
+  function findCommentItem(link) {
+    let el = link.parentElement;
+    while (el && el !== document.body) {
+      if (el.classList && el.classList.contains("o-commentSection")) return null;
+      const firstChild = el.firstElementChild;
+      if (
+        firstChild &&
+        firstChild.classList &&
+        firstChild.classList.contains("flex-shrink-0") &&
+        firstChild.querySelector(".comment-avatar")
+      ) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
   }
 
   // リンクから最も近い記事ブロック（非表示対象）を探す
@@ -124,9 +145,12 @@
       if (link.closest('[data-note-muted="true"]')) continue;
       const creatorId = extractCreatorId(link.getAttribute("href"));
       if (!creatorId || !mutedIds.includes(creatorId)) continue;
-      const block = findArticleBlock(link);
+      // コメント欄内のリンクはコメント1件単位で非表示にする
+      const block = link.closest(".o-commentSection")
+        ? findCommentItem(link)
+        : findArticleBlock(link);
       if (block && !block.dataset.noteMuted) {
-        block.style.display = "none";
+        block.style.setProperty("display", "none", "important");
         block.dataset.noteMuted = "true";
       }
     }
@@ -135,7 +159,7 @@
   // ミュート解除（リスト更新時に再表示するため）
   function unhideAll() {
     document.querySelectorAll('[data-note-muted="true"]').forEach((el) => {
-      el.style.display = "";
+      el.style.removeProperty("display");
       delete el.dataset.noteMuted;
     });
   }
