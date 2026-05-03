@@ -52,8 +52,10 @@ green "  ✔ note-mute-chrome.zip"
 yellow "📦 [2/4] note ミュート — iOS Userscript..."
 
 cp "$MUTE_DIR/userscript/note-mute.user.js" "$DIST_DIR/"
+(cd "$DIST_DIR" && zip -j "note-mute-ios.zip" "note-mute.user.js" -x "*.DS_Store")
+rm "$DIST_DIR/note-mute.user.js"
 
-green "  ✔ note-mute.user.js"
+green "  ✔ note-mute-ios.zip"
 
 # ============================================================
 #  3. スキ数非表示 — Chrome拡張
@@ -79,8 +81,10 @@ green "  ✔ hide-note-likes-chrome.zip"
 yellow "📦 [4/4] スキ数非表示 — iOS Userscript..."
 
 cp "$LIKES_DIR/userscript/note_like_hide.js" "$DIST_DIR/"
+(cd "$DIST_DIR" && zip -j "hide-note-likes-ios.zip" "note_like_hide.js" -x "*.DS_Store")
+rm "$DIST_DIR/note_like_hide.js"
 
-green "  ✔ note_like_hide.js"
+green "  ✔ hide-note-likes-ios.zip"
 
 # ============================================================
 #  (将来) Android 版
