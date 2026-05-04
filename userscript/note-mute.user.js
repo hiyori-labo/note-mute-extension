@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         note ミュート
 // @namespace    https://github.com/hiyori-labo/note-mute-extension
-// @version      1.0.0
+// @version      1.0.2
 // @description  noteのホームフィードから特定クリエイターの記事を非表示にします
 // @match        https://note.com/*
 // @run-at       document-idle
@@ -87,10 +87,26 @@
 
   // カードセレクター（元の方式 - 横スクロール等で有効）
   const CARD_SELECTOR =
-    'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"]';
+    'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"], figure[embedded-service="note"]';
+
+  // 記事詳細ページのURL判定（DOM判定のフォールバック）
+  const ARTICLE_DETAIL_PATH_RE = /^\/[^/]+\/n\/[^/]+/;
+  function isArticleDetailPage() {
+    return ARTICLE_DETAIL_PATH_RE.test(location.pathname);
+  }
+
+  // 「今読んでいる記事自体」のページ最上位 <article> を判定
+  function isPageMainArticle(el) {
+    if (!el || el.tagName !== "ARTICLE") return false;
+    if (el.parentElement && el.parentElement.closest("article")) return false;
+    const main = document.querySelector("main");
+    const inMainWithH1 = !!(main && main.contains(el) && el.querySelector("h1"));
+    return inMainWithH1 || isArticleDetailPage();
+  }
 
   function hideIfMuted(el) {
     if (!mutedIds.length || el.dataset.noteMuted) return;
+    if (isPageMainArticle(el)) return;
     const links = el.querySelectorAll("a[href]");
     for (const link of links) {
       // コメント欄内のリンクは別ロジック（findCommentItem）で処理するためスキップ
@@ -125,12 +141,20 @@
 
   // リンクから最も近い記事ブロック（非表示対象）を探す
   function findArticleBlock(link) {
+    // 埋め込みカード（記事本文中の note 埋め込み figure）が祖先なら最優先でそれを隠す
+    const embedFigure = link.closest('figure[embedded-service="note"]');
+    if (embedFigure) return embedFigure;
+
+    // 記事詳細ページ本文内のインラインリンクは何も隠さない
+    const enclosingArticle = link.closest("article");
+    if (enclosingArticle && isPageMainArticle(enclosingArticle)) return null;
+
     let el = link.parentElement;
     while (el && el !== document.body) {
       if (
         el.matches &&
         el.matches(
-          'article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"]'
+          'article, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"], figure[embedded-service="note"]'
         )
       ) {
         if (el === link) {
