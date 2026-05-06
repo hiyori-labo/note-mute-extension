@@ -6,6 +6,8 @@
 // @match        https://note.com/*
 // @run-at       document-idle
 // @noframes
+// @updateURL    https://github.com/hiyori-labo/note-mute-extension/raw/main/userscript/note-mute.user.js
+// @downloadURL  https://github.com/hiyori-labo/note-mute-extension/raw/main/userscript/note-mute.user.js
 // ==/UserScript==
 
 (() => {
