@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         note ミュート
 // @namespace    https://github.com/hiyori-labo/note-mute-extension
-// @version      1.1.0
+// @version      1.2.0
 // @description  noteのホームフィードから特定クリエイターの記事を非表示にします
 // @match        https://note.com/*
 // @run-at       document-start
@@ -15,6 +15,9 @@
 
   // 埋め込みカード等の iframe 内では動かない（FAB の二重表示防止）
   if (window.top !== window.self) return;
+
+  // このスクリプトが動き始めた時刻（ページ読み込み開始からの経過ms）
+  const T_START = Math.round(performance.now());
 
   const STORAGE_KEY = "noteMute_creators";
 
@@ -278,10 +281,29 @@
   // 新しいノードが追加されたら再スキャン
   function startObserver() {
     let scanTimer = null;
+    let pendingSince = 0;
+    const DEBOUNCE_MS = 200;
+    const MAX_WAIT_MS = 500;
+
+    const run = () => {
+      clearTimeout(scanTimer);
+      scanTimer = null;
+      pendingSince = 0;
+      scanAll();
+    };
+
     const observer = new MutationObserver(() => {
-      // デバウンスで過度なスキャンを防止
-      if (scanTimer) clearTimeout(scanTimer);
-      scanTimer = setTimeout(scanAll, 200);
+      // デバウンスで過度なスキャンを防止。
+      // ただし読み込み中はDOMの変更が途切れず、素のデバウンスだと
+      // 延期され続けて一度も走らないため、最大500msで必ず実行する。
+      const now = Date.now();
+      if (!pendingSince) pendingSince = now;
+      if (now - pendingSince >= MAX_WAIT_MS) {
+        run();
+        return;
+      }
+      clearTimeout(scanTimer);
+      scanTimer = setTimeout(run, DEBOUNCE_MS);
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
@@ -641,6 +663,92 @@
     renderList();
   }
 
+  // ── 計測バッジ（原因切り分け用・通常は無効） ──
+  // note.com/#nmdebug を開くとON、note.com/#nmdebugoff でOFF。
+  const DEBUG_KEY = "noteMute_debugTiming";
+
+  function debugEnabled() {
+    try {
+      if (location.hash.includes("nmdebugoff")) {
+        localStorage.removeItem(DEBUG_KEY);
+        return false;
+      }
+      if (location.hash.includes("nmdebug")) localStorage.setItem(DEBUG_KEY, "1");
+      return localStorage.getItem(DEBUG_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function startTimingBadge() {
+    if (!debugEnabled()) return;
+
+    const ids = mutedIds.filter((id) => SAFE_ID_RE.test(id));
+    const linkSelector = ids
+      .flatMap((id) => [
+        `a[href^="/${id}/" i]`,
+        `a[href^="https://note.com/${id}/" i]`,
+      ])
+      .join(",");
+
+    let tSeen = null; // ミュート対象の記事リンクがDOMに現れた時刻
+    let tHidden = null; // それが実際に消えた時刻
+    let tLikes = null; // スキ数スクリプトが動き始めた時刻
+    const started = performance.now();
+
+    const fmt = (v) => (v === null ? "…" : `${v}ms`);
+
+    const render = () => {
+      if (!document.body) return;
+      let el = document.getElementById("nm-timing");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "nm-timing";
+        el.style.cssText =
+          "position:fixed;top:8px;left:8px;z-index:2147483647;background:rgba(0,0,0,.78);" +
+          "color:#fff;font:11px/1.6 -apple-system,sans-serif;padding:7px 9px;border-radius:6px;" +
+          "white-space:pre;pointer-events:auto;";
+        el.addEventListener("click", () => el.remove());
+        document.body.appendChild(el);
+      }
+      const nav = performance.getEntriesByType("navigation")[0];
+      const dcl = nav && nav.domContentLoadedEventEnd
+        ? Math.round(nav.domContentLoadedEventEnd)
+        : null;
+      el.textContent = [
+        `ミュート注入: ${T_START}ms`,
+        `スキ数注入: ${fmt(tLikes)}`,
+        `DOM構築: ${fmt(dcl)}`,
+        `対象出現: ${fmt(tSeen)}`,
+        `対象非表示: ${fmt(tHidden)}`,
+        `CSS: ${SUPPORTS_HAS ? "対応" : "非対応"} / 命中: ${
+          linkSelector &&
+          document.querySelector(`:is(${CSS_CARD_SELECTOR}):has(:is(${linkSelector}))`)
+            ? "あり"
+            : "なし"
+        }`,
+      ].join("\n");
+    };
+
+    const tick = () => {
+      if (tLikes === null && document.documentElement.hasAttribute("data-hn-hide")) {
+        tLikes = Math.round(performance.now());
+      }
+      if (linkSelector) {
+        const link = document.querySelector(linkSelector);
+        if (link) {
+          if (tSeen === null) tSeen = Math.round(performance.now());
+          if (tHidden === null && link.getClientRects().length === 0) {
+            tHidden = Math.round(performance.now());
+          }
+        }
+      }
+      render();
+      if (performance.now() - started < 25000) setTimeout(tick, 100);
+    };
+    tick();
+  }
+
   // ── 初期化 ──
   function init() {
     updateMutedIds();
@@ -661,6 +769,7 @@
   // DOM構築を待たずに、まずCSSだけ先に当てる（document-start で実行）
   updateMutedIds();
   applyHideCss();
+  startTimingBadge();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init, { once: true });
