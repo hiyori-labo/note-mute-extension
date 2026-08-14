@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         note ミュート
 // @namespace    https://github.com/hiyori-labo/note-mute-extension
-// @version      1.3.0
+// @version      1.4.0
 // @description  noteのホームフィードから特定クリエイターの記事を非表示にします
 // @match        https://note.com/*
 // @run-at       document-start
@@ -111,9 +111,67 @@
   // CSSに埋め込んで安全なIDだけ対象にする（それ以外はJSスキャンに任せる）
   const SAFE_ID_RE = /^[a-z0-9_-]+$/i;
 
-  // CARD_SELECTOR と同等。ただし記事詳細ページ本体（h1を持つarticle）は除外
+  // CARD_SELECTOR と同等。ただし記事詳細ページ本体（h1を持つarticle）は除外。
+  // grid-rows-subgrid は現在のnote.comのカード要素の目印（タグ/クリエイター/検索ページで確認）。
+  // それ以外は旧デザイン用で、現在のnote.comにはヒットしないが害もないため残している。
   const CSS_CARD_SELECTOR =
-    'article:not(:has(h1)), section.m-largeNoteWrapper, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"], figure[embedded-service="note"]';
+    'article:not(:has(h1)), [class~="grid-rows-subgrid"], section.m-largeNoteWrapper, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"], figure[embedded-service="note"]';
+
+  // note.com は Tailwind ベースになり、カードに意味のあるクラス名が付かなくなった。
+  // 固定のセレクタだけだとページやログイン状態でレイアウトが変わると外れるので、
+  // 実際に表示されているカードから目印になるクラスを見つけて補う。
+  const ARTICLE_HREF_RE = /^(?:https:\/\/note\.com)?\/[^/]+\/n\/n/;
+  let detectedTokens = null;
+
+  function detectCardTokens() {
+    if (detectedTokens) return detectedTokens;
+    const links = [...document.querySelectorAll(NOTE_LINK_SELECTOR)]
+      .filter((a) => ARTICLE_HREF_RE.test(a.getAttribute("href") || ""))
+      .slice(0, 40);
+
+    const cards = [];
+    for (const link of links) {
+      const card = findArticleBlock(link);
+      if (card) cards.push(card);
+    }
+    if (cards.length < 3) return null;
+
+    const freq = new Map();
+    for (const card of cards) {
+      for (const token of card.classList) {
+        freq.set(token, (freq.get(token) || 0) + 1);
+      }
+    }
+
+    // 全カードが共通して持つクラスだけを使い、それらを「すべて併せ持つ要素」に絞る。
+    // border-b のような汎用クラスを単独で使うと、別ページでカードより広い範囲を
+    // 巻き込むため、AND で組み合わせて特定する。
+    const common = [];
+    for (const [token, n] of freq) {
+      if (n !== cards.length) continue;
+      if (/["\\]/.test(token)) continue; // セレクタに埋め込めない文字
+      let total;
+      try {
+        total = document.querySelectorAll(`[class~="${token}"]`).length;
+      } catch {
+        continue;
+      }
+      common.push({ token, total });
+    }
+    if (!common.length) return null;
+
+    // ページ内で珍しいクラスほどカードを言い当てる力が強いので、それを優先する
+    common.sort((a, b) => a.total - b.total);
+    detectedTokens = common.slice(0, 6).map((c) => c.token);
+    return detectedTokens;
+  }
+
+  // 固定セレクタ＋このページで検出したカードの目印（検出分はANDで1セレクタ）
+  function cardSelector() {
+    const tokens = detectCardTokens();
+    if (!tokens) return CSS_CARD_SELECTOR;
+    return `${CSS_CARD_SELECTOR},${tokens.map((t) => `[class~="${t}"]`).join("")}`;
+  }
 
   // 1クリエイター分のリンクセレクタ
   function creatorLinkSelector(id) {
@@ -132,17 +190,17 @@
     const ids = mutedIds.filter((id) => SAFE_ID_RE.test(id));
     if (!ids.length) return "";
     const linkSelector = ids.map(creatorLinkSelector).join(",");
-    return `:is(${CSS_CARD_SELECTOR}):has(:is(${linkSelector})){display:none !important;}`;
+    return `:is(${cardSelector()}):has(:is(${linkSelector})){display:none !important;}`;
   }
 
   // コンテンツブロッカー（AdGuard等）用のルールを生成する。
   // Userscriptsアプリの注入が遅い環境では、こちらに貼ると描画前に非表示にできる。
   function buildBlockRules() {
+    const cards = cardSelector();
     return mutedIds
       .filter((id) => SAFE_ID_RE.test(id))
       .map(
-        (id) =>
-          `note.com##:is(${CSS_CARD_SELECTOR}):has(:is(${creatorLinkSelector(id)}))`
+        (id) => `note.com##:is(${cards}):has(:is(${creatorLinkSelector(id)}))`
       )
       .join("\n");
   }
@@ -346,6 +404,7 @@
     const check = () => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
+        detectedTokens = null; // ページ種別が変わるとカードの形も変わる
         setTimeout(scanAll, 500);
         setTimeout(scanAll, 1500);
       }
