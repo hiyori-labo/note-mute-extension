@@ -80,9 +80,9 @@ green "  ✔ hide-note-likes-chrome.zip"
 # ============================================================
 yellow "📦 [4/4] スキ数非表示 — iOS Userscript..."
 
-cp "$LIKES_DIR/userscript/note_like_hide.js" "$DIST_DIR/"
-(cd "$DIST_DIR" && zip -j "hide-note-likes-ios.zip" "note_like_hide.js" -x "*.DS_Store")
-rm "$DIST_DIR/note_like_hide.js"
+cp "$LIKES_DIR/userscript/note_like_hide.user.js" "$DIST_DIR/"
+(cd "$DIST_DIR" && zip -j "hide-note-likes-ios.zip" "note_like_hide.user.js" -x "*.DS_Store")
+rm "$DIST_DIR/note_like_hide.user.js"
 
 green "  ✔ hide-note-likes-ios.zip"
 

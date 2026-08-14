@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         note ミュート
 // @namespace    https://github.com/hiyori-labo/note-mute-extension
-// @version      1.0.2
+// @version      1.1.0
 // @description  noteのホームフィードから特定クリエイターの記事を非表示にします
 // @match        https://note.com/*
-// @run-at       document-idle
+// @run-at       document-start
 // @noframes
 // @updateURL    https://github.com/hiyori-labo/note-mute-extension/raw/main/userscript/note-mute.user.js
 // @downloadURL  https://github.com/hiyori-labo/note-mute-extension/raw/main/userscript/note-mute.user.js
@@ -90,6 +90,62 @@
   // カードセレクター（元の方式 - 横スクロール等で有効）
   const CARD_SELECTOR =
     'section.m-largeNoteWrapper, [class*="NoteWrapper"], article, [class*="noteCard"], [class*="NoteCard"], figure[embedded-service="note"]';
+
+  // ── 即時CSS ──
+  // JSでDOMを走査する前に、CSSだけで描画前に隠す（初回表示のチラつき対策）。
+  // 取りこぼしは従来どおり scanAll() が拾う。
+  const HIDE_STYLE_ID = "nm-hide-style";
+
+  // :has() 未対応ブラウザではCSS方式をスキップ（JSスキャンのみで従来通り動く）
+  const SUPPORTS_HAS = (() => {
+    try {
+      return !!(window.CSS && CSS.supports && CSS.supports("selector(article:has(a))"));
+    } catch {
+      return false;
+    }
+  })();
+
+  // CSSに埋め込んで安全なIDだけ対象にする（それ以外はJSスキャンに任せる）
+  const SAFE_ID_RE = /^[a-z0-9_-]+$/i;
+
+  // CARD_SELECTOR と同等。ただし記事詳細ページ本体（h1を持つarticle）は除外
+  const CSS_CARD_SELECTOR =
+    'article:not(:has(h1)), section.m-largeNoteWrapper, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"], figure[embedded-service="note"]';
+
+  function buildHideCss() {
+    if (!SUPPORTS_HAS) return "";
+    const ids = mutedIds.filter((id) => SAFE_ID_RE.test(id));
+    if (!ids.length) return "";
+    const linkSelector = ids
+      .flatMap((id) => [
+        `a[href="/${id}" i]`,
+        `a[href^="/${id}/" i]`,
+        `a[href^="/${id}?" i]`,
+        `a[href="https://note.com/${id}" i]`,
+        `a[href^="https://note.com/${id}/" i]`,
+        `a[href^="https://note.com/${id}?" i]`,
+      ])
+      .join(",");
+    return `:is(${CSS_CARD_SELECTOR}):has(:is(${linkSelector})){display:none !important;}`;
+  }
+
+  function applyHideCss() {
+    const root = document.documentElement;
+    if (!root) return;
+    const css = buildHideCss();
+    let style = document.getElementById(HIDE_STYLE_ID);
+    if (!css) {
+      style?.remove();
+      return;
+    }
+    if (!style) {
+      style = document.createElement("style");
+      style.id = HIDE_STYLE_ID;
+    }
+    if (style.textContent !== css) style.textContent = css;
+    // note.com の再描画で外された場合に備えて <html> 直下に貼り直す
+    if (!style.isConnected) root.appendChild(style);
+  }
 
   // 記事詳細ページのURL判定（DOM判定のフォールバック）
   const ARTICLE_DETAIL_PATH_RE = /^\/[^/]+\/n\/[^/]+/;
@@ -513,6 +569,7 @@
       creators.push(entry);
       saveCreators(creators);
       updateMutedIds();
+      applyHideCss();
       scanAll();
       renderList();
       inputEl.value = "";
@@ -557,6 +614,7 @@
         if (!removed) return;
         saveCreators(creators);
         updateMutedIds();
+        applyHideCss();
         unhideAll();
         scanAll();
         renderList();
@@ -586,18 +644,26 @@
   // ── 初期化 ──
   function init() {
     updateMutedIds();
+    applyHideCss();
     injectUI();
     scanAll();
     startObserver();
     watchNavigation();
     setTimeout(scanAll, 1000);
     setTimeout(scanAll, 3000);
-    // UIが note.com の SPA 再描画で消えた場合に備えて定期的に再注入
-    setInterval(injectUI, 2000);
+    // UI・CSSが note.com の SPA 再描画で消えた場合に備えて定期的に貼り直す
+    setInterval(() => {
+      injectUI();
+      applyHideCss();
+    }, 2000);
   }
 
+  // DOM構築を待たずに、まずCSSだけ先に当てる（document-start で実行）
+  updateMutedIds();
+  applyHideCss();
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", init, { once: true });
   } else {
     init();
   }
