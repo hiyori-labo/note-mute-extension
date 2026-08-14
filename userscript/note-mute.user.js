@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         note ミュート
 // @namespace    https://github.com/hiyori-labo/note-mute-extension
-// @version      1.2.0
+// @version      1.3.0
 // @description  noteのホームフィードから特定クリエイターの記事を非表示にします
 // @match        https://note.com/*
 // @run-at       document-start
@@ -115,21 +115,36 @@
   const CSS_CARD_SELECTOR =
     'article:not(:has(h1)), section.m-largeNoteWrapper, [class*="NoteWrapper"], [class*="noteCard"], [class*="NoteCard"], [class*="TimelineItem"], figure[embedded-service="note"]';
 
+  // 1クリエイター分のリンクセレクタ
+  function creatorLinkSelector(id) {
+    return [
+      `a[href="/${id}" i]`,
+      `a[href^="/${id}/" i]`,
+      `a[href^="/${id}?" i]`,
+      `a[href="https://note.com/${id}" i]`,
+      `a[href^="https://note.com/${id}/" i]`,
+      `a[href^="https://note.com/${id}?" i]`,
+    ].join(",");
+  }
+
   function buildHideCss() {
     if (!SUPPORTS_HAS) return "";
     const ids = mutedIds.filter((id) => SAFE_ID_RE.test(id));
     if (!ids.length) return "";
-    const linkSelector = ids
-      .flatMap((id) => [
-        `a[href="/${id}" i]`,
-        `a[href^="/${id}/" i]`,
-        `a[href^="/${id}?" i]`,
-        `a[href="https://note.com/${id}" i]`,
-        `a[href^="https://note.com/${id}/" i]`,
-        `a[href^="https://note.com/${id}?" i]`,
-      ])
-      .join(",");
+    const linkSelector = ids.map(creatorLinkSelector).join(",");
     return `:is(${CSS_CARD_SELECTOR}):has(:is(${linkSelector})){display:none !important;}`;
+  }
+
+  // コンテンツブロッカー（AdGuard等）用のルールを生成する。
+  // Userscriptsアプリの注入が遅い環境では、こちらに貼ると描画前に非表示にできる。
+  function buildBlockRules() {
+    return mutedIds
+      .filter((id) => SAFE_ID_RE.test(id))
+      .map(
+        (id) =>
+          `note.com##:is(${CSS_CARD_SELECTOR}):has(:is(${creatorLinkSelector(id)}))`
+      )
+      .join("\n");
   }
 
   function applyHideCss() {
@@ -148,6 +163,24 @@
     if (style.textContent !== css) style.textContent = css;
     // note.com の再描画で外された場合に備えて <html> 直下に貼り直す
     if (!style.isConnected) root.appendChild(style);
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // クリップボードAPIが使えない場合は、選択済みの入力欄を出して手動コピーしてもらう
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText =
+        "position:fixed;top:20%;left:5%;width:90%;height:140px;z-index:1000001;" +
+        "font-size:16px;padding:8px;border-radius:8px;border:1px solid #888;";
+      document.body.appendChild(ta);
+      ta.select();
+      ta.addEventListener("blur", () => ta.remove(), { once: true });
+      return false;
+    }
   }
 
   // 記事詳細ページのURL判定（DOM判定のフォールバック）
@@ -423,6 +456,21 @@
         flex: 1;
         max-height: 260px;
       }
+      #nm-panel-footer {
+        border-top: 1px solid #e8e8e8;
+        padding: 8px 12px;
+      }
+      #nm-copy-rules {
+        width: 100%;
+        padding: 7px 8px;
+        background: #f2f4f7;
+        color: #475569;
+        border: none;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      #nm-copy-rules:active { background: #e2e6ed; }
       .nm-item {
         display: flex;
         align-items: center;
@@ -510,6 +558,9 @@
         <button id="nm-add-btn">追加</button>
       </div>
       <div id="nm-list"></div>
+      <div id="nm-panel-footer">
+        <button id="nm-copy-rules">ブロックルールをコピー</button>
+      </div>
     `;
     document.body.appendChild(panel);
 
@@ -624,6 +675,19 @@
       // 追加ボタン
       if (e.target.closest("#nm-add-btn")) {
         addCreator();
+        return;
+      }
+
+      // ブロックルールをコピー
+      if (e.target.closest("#nm-copy-rules")) {
+        const rules = buildBlockRules();
+        if (!rules) {
+          showToast("ミュート中のクリエイターがいません");
+          return;
+        }
+        copyText(rules).then((ok) => {
+          showToast(ok ? "ルールをコピーしました" : "手動でコピーしてください");
+        });
         return;
       }
 
